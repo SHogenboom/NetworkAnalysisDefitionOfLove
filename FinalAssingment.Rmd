@@ -1,0 +1,571 @@
+---
+title: "A Network Analysis of the Definition of Love." 
+subtitle: "The Issues Encountered and how I Solved Them"
+author: 
+- "Sally A.M. Hogenboom"
+- "11377909"
+- "word count: 2110 exlc. references & figurecaptions"
+date: "12-12-2017"
+output:
+  pdf_document:
+    toc: TRUE
+    toc_depth: 3 
+---
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE)
+
+library(NLP)
+library(tm)
+library(dplyr)
+library(tidytext)
+library(tidyr)
+library(qgraph)
+library(wordcloud)
+library(stringr)
+library(IsingFit)
+
+# setwd("~/Documents/Universiteit/Master/13-Network_Analysis")
+oldpar <- par()
+```
+
+
+```{R SUPPORTING FUNCTIONS, message=FALSE, warning=FALSE, include=FALSE}
+SentenceLengths <- function (dataset) {
+  # Step 1: Create a Tiblle Data Frame
+    # Convert Vectors into dataframe entries with 1 sentence per row
+      text_df <- data_frame(line = 1:nrow(dataset), text = dataset$Quote)
+  
+  # Step 2: Split Entries Down to Seperate Words
+      # removes all punctuation
+      # converts to lower case
+      
+      words_df <- 
+        {text_df %>%
+        unnest_tokens(word, text)}
+      
+  # Step 3: Remove Stopwords
+      # Removing stop wordswill prevent cluttering of the data and the subsequent
+      # ... network. 
+      # count the frequency of each word in each line = pp entry
+      data("stop_words") # N = 1149
+      words_df <-
+        {words_df %>%
+          anti_join(stop_words) %>%
+          count(line, word, sort=TRUE)}
+  
+    # Step 4: Calculate Descriptives
+        # calculate N words per sentence after removing stop-words
+        descriptives_df <- {
+          words_df %>%
+            group_by(line) %>%
+            summarize(total= sum(n))
+        }
+  
+    return(descriptives_df)
+}
+
+WordFrequency <- function (dataset, textcol) {
+  # Step 1: Create Corpus out of Dataset
+    # required as input for the tm package manipulations
+    data_corpus <- Corpus(VectorSource(dataset[,textcol]))
+  
+  # Step 2: Tidy Corpus
+    data_corpus <- tm_map(data_corpus, stripWhitespace) # remove any double white spaces
+    data_corpus <- tm_map(data_corpus, removeNumbers) 
+    data_corpus <- tm_map(data_corpus, content_transformer(tolower))
+    data_corpus <- tm_map(data_corpus, removePunctuation)
+    data_corpus <- tm_map(data_corpus, removeWords, stopwords("en")) # N = 174
+    stopwords<- data(stop_words) # N = 1149
+    data_corpus <- tm_map(data_corpus, removeWords, stop_words)
+    
+  # Step 3: Convert Corpus to Tiblle Data Frame
+    # Allows for token analysis (e.g., bigrams)
+    data_df <- data.frame(text = sapply(data_corpus, as.character), stringsAsFactors = FALSE)
+    text_df <- data_frame(line = 1:nrow(data_df), text = data_df$text)
+  
+  # Step 4: Split Entries Down to Seperate Words
+      # removes all punctuation
+      # converts to lower case
+      words_df <- 
+        {text_df %>%
+          unnest_tokens(word, text)}
+      
+  # Step 5: Remove Additional Stopwords
+      # Removing stop wordswill prevent cluttering of the data and the subsequent
+      # ... network. 
+      data("stop_words") # N = 1149
+      words_df <-
+        {words_df %>%
+          anti_join(stop_words)}
+      
+  # Step 6: Count Word Frequencies
+      frequency_df <- 
+      {words_df %>%
+        count(word, sort = TRUE)}
+      
+    return(frequency_df)
+}
+
+BigramCount <- function (dataset, textcol) {
+  # Bigrams are 2n Word-Pairs. E.g., "Love-People"
+  # Partial Protocol for Tidy Text followed from 
+  # ... http://tidytextmining.com/ngrams.html#tokenizing-by-n-gram
+  
+  # Step 1: Create Corpus out of Dataset
+    # required as input for the tm package manipulations
+    data_corpus <- Corpus(VectorSource(dataset[,textcol]))
+  
+  # Step 2: Tidy Corpus
+    data_corpus <- tm_map(data_corpus, stripWhitespace) # remove any double white spaces
+    data_corpus <- tm_map(data_corpus, removeNumbers) 
+    data_corpus <- tm_map(data_corpus, content_transformer(tolower))
+    data_corpus <- tm_map(data_corpus, removePunctuation)
+    data_corpus <- tm_map(data_corpus, removeWords, stopwords("en")) # N = 174
+    stopwords<- data(stop_words)
+    data_corpus <- tm_map(data_corpus, removeWords, stop_words)
+    
+  # Step 3: Convert Corpus to Tiblle Data Frame
+    # Allows for token analysis (e.g., bigrams)
+    data_df <- data.frame(text = sapply(data_corpus, as.character), 
+                          stringsAsFactors = FALSE)
+    text_df <- data_frame(line = 1:nrow(data_df), text = data_df$text)
+    
+  # Step 4: Extract Word-Pairs / Bigrams from The Dataset
+    bigram_df <- {
+        text_df %>% 
+        unnest_tokens(bigram, text, token = "ngrams", n = 2)}
+  
+  # Step 5: Split Bigrams into 2 columns
+    # word1 = Target & word2 = Source columns in subsequent Network Edgelists
+    bigram_df <- {
+      bigram_df %>%
+        separate(bigram, c("word1", "word2"), sep = " ")}
+    
+  # Step 6: Calculate Frequencies of Bigrams
+    # Frequencies of pairs can be used as input for a Network
+    bigram_count <- {
+      bigram_df %>%
+        count(word1, word2, sort = TRUE)}
+    
+  # Step 7: Assign Appropriate Colnames to be Used as Edgelist for Qgraph
+    colnames(bigram_count) <- c("Source", "Target")
+    
+   return(bigram_count)
+}
+
+BigramIncreaseNDescriptions <- function (dataset, textcol) {
+  # GOAL: To Simulate how The Amount of Bigrams Increases with the Amount of 
+  # ... Included Statements in the Sample
+
+  # Step 1: Create Empty Output Matrix
+    output <- matrix(data = NA, ncol = 2, nrow = nrow(dataset))
+    colnames(output) <- c("NStatements", "NBigrams")
+  
+  # Step 2: Loop over Rows from Dataset (i.e., N Statement Included)  
+      for (i in 1:nrow(dataset)) {
+        # access relevant part of dataset
+          dat <- dataset[1:i,]
+        # count the amount of Bigrams In Subset Data
+          n_bigrams <- nrow(BigramCount(dat, textcol))
+        # Attach simulation to output matrix
+          output[i, "NStatements"] <- i
+          output[i, "NBigrams"] <- n_bigrams
+      } # END FOR LOOP
+
+return(output)
+}
+
+```
+
+
+# Introduction
+Humans - whether researcher, lay-person, or writer - tend not to agree on definitions of concepts. Similarly, we seem to be unable to reach a consensus on the definition of love. Even dictionaries do not seem to agree. For example, the Cambridge Dictionary (2017) describes love as: "To like another adult very much and be romantically and sexually attracted to them, or to have strong feelings of liking a friend or person in your family." In contrast, the Merriam Webster Dictionary (2017) describes love as: "Strong affection for another arising out of kinship or personal ties.". Even though, in sentiment, these definitions may be similar, there are already obvious differences; Cambridge dictionary describes sexual attraction, but the Merriam Webster does not. Achieving consensus on a definition of a concept is thus very difficult, possibly even impossible. The current study sought to explore the use of Network Analysis as an attempt to syntesize and identify commonalities between definitions. The prior goal being the identification of clusters of words that - together - make up the concept of love. However, to the best of my knowledge such a technique has not been used before, and I thus will discuss the considerations made, the pitfalls of existing functions and protocols, and my solutions to overcome them.
+
+# The Datasets
+The first decision  that I made concerns the combination of available data. I have opted to divide the data between definitions / descriptions made by lay people (Personal Definitions) and writers (Literary Quotes), because writers tend to talk about concepts in a more descriptive sense. I have thus ran the analyses on two distinct datasets. All materials are available in the online appendix [^1].  
+
+[^1]: https://github.com/SHogenboom/NetworkAnalysisDefitionOfLove  
+
+```{R datasets, include = FALSE}
+# GOAL: Load all the collected data into seperate data elements
+
+# Personal Definitions [Qualtrics + UrbanDictionary]
+  pd_data <- read.csv(file="PersonalDefinitions.csv", sep = ";")
+  pd_data$Quote <-  as.character(pd_data$Quote)
+  colnames(pd_data) <- c("Quote", "Author")
+
+# Literary Quotes
+  # QuotesDB
+      quotedb_data <- read.csv(file="quotedb.csv", sep = ";", header = FALSE)
+      colnames(quotedb_data) <- c("Quote", "Author")
+  # Psychology Today
+      psy_today_data <- read.csv(file="psychology_today.csv", sep = ";", header = FALSE)
+      # split quotes from authors
+      psy_today_data <-
+          {psy_today_data %>%
+          separate(V1, c("Quote", "Author"), sep = " ~ ")}
+  # Combine data
+      writers_data <- rbind(quotedb_data, psy_today_data)
+      writers_data$Quote <- as.character(writers_data$Quote)
+      
+# Everything
+    all_data <- rbind(writers_data, pd_data)
+```
+
+## Personal Definitions
+I conducted a 1-question survey under my peers (N = 27) asking them to report their personal definitions of love. I did not specify the type of love (e.g., companionate, romantic) as these appear constructs that are only separated by researchers, and not by lay-people in real life. The second source of data came from UrbanDictionary (N = 33). UrbanDictionary allows users to add their own definitions for words. I opted to combine these two sources into the dataset `pd_data` as both sources are from lay people (N = 60). 
+
+```{r pd_descriptives, message=FALSE, warning=FALSE, include=FALSE}
+pd_words <- SentenceLengths(pd_data)
+
+min(pd_words$total)
+max(pd_words$total)
+mean(pd_words$total)
+sd(pd_words$total)
+```
+
+**Descriptives** [^2]  
+
++ Shortest Description: 1 word 
++ Longest Description: 48 words
++ Mean: 8.78 words
++ SD:  9.5 words 
+
+[^2]: Supporting Custom Function: SentenceLenghts
+
+## Literary Quotes
+A different source of definitions of love comes from the literature. Writers have been known to describe love in unique ways. I have thus searched the internet for "Quotes of Love". Such searches result in a long list of website quoting famous authors. A selection was made and resulted in the following two sets of data: QuoteDB (N = 100; 2017), 
+and a list of wise, witty, and cynical quotes by Seltzer (N = 96; 2011).  
+
+```{r pd_descriptives2, message=FALSE, warning=FALSE, include=FALSE}
+writers_words <- SentenceLengths(writers_data)
+
+min(writers_words$total)
+max(writers_words$total)
+mean(writers_words$total)
+sd(writers_words$total)
+```
+**Descriptives**[^2]  
+
++ Shortest Description: 1 word 
++ Longest Description: 52 words
++ Mean: 5.91 words
++ SD:  4.71 words   
+    
+## Overview Plots    
+
+```{R OverviewPlots, echo = FALSE, message=FALSE, warning=FALSE}
+# create 1 row x 2 plots
+  par(mfrow = c(1,2))
+
+# Plot the Lenghts of Descriptions
+hist(pd_words$total, xlab = "N Words", ylab = "Frequency of Descriptions",
+     main = "Personal Definitions", ylim = c(0,125))
+
+hist(writers_words$total, xlab = "N Words", ylab = "Frequency of Descriptions",
+     main = "Literary Quotes", ylim = c(0,125))
+```
+    
+*Figure 1.* An overview of the total amount of words in the descriptions after removal of stop-words.
+
+```{R, echo=FALSE, message=FALSE, warning=FALSE}
+# Create 1 row x 2 plots
+  par(mfrow = c(1,2))
+
+# Extract the Most Frequently Used Words
+  pd_word_frequencies <- WordFrequency(pd_data, "Quote")
+  writers_word_frequencies <- WordFrequency(writers_data, "Quote")
+
+# Plot Top 50 Words in Wordcloud
+  #library (wordcloud)
+
+wordcloud(words = pd_word_frequencies$word, freq = pd_word_frequencies$n, 
+          random.order = FALSE, max.words = 50, 
+          main = "Top 50 Words in Personal Definitions")
+
+wordcloud(words = writers_word_frequencies$word, freq = writers_word_frequencies$n, 
+          random.order = FALSE, max.words = 50,
+          main = "Top 50 Words in Literary Quotes")
+
+```
+    
+*Figure 2.* **[Left]** Personal Definitions, **[Right]** Literary Quotes. An overview of the Top 50 most frequently used words.[^3] Frequency differences are captures by relative differences in the size of the words portrayed.  
+
+[^3]: Supporting Custom Function: WordFrequency
+
+# Network 1: Bigrams  
+
+## Example Network
+
+One of the ways in which the data may be visualized is by plotting bigrams. Bigrams are combinations of two words that directly follow each other. For example consider the statement: "Love is caring deeply for another". Without stop-words (these are removed at the initial processing stage) that sentence looks like this: "love caring deeply". The example sentence contains two bigrams: "love-caring" and "caring-deeply". Plotting these in a directed acylic graphical (DAG) network allows you to follow the nodes, and thereby actually read the definitions. Consider another example statement: "love is feeling deeply emotional.". Combined, these two statements in a DAG would look like this:  
+   
+  
+```{r, echo = FALSE}
+# Create Edgelist Example Matrix
+example <- matrix(c(
+  "love", "caring", 1,
+  "caring", "deeply", 1,
+  "love", "feeling", 1,
+  "feeling", "deeply", 1,
+  "deeply", "emotional", 1
+), byrow = TRUE, ncol = 3)
+# Assign Edgelist compatible columns names
+colnames(example) <- c("Source", "Target", "")
+# plot example graph
+qgraph(example, directed = TRUE, theme = "colorblind", edge.width = 0.8, layout = "spring")
+```
+  
+*Figure 3.* An example of a Directed Acyclic Graphical Network of two example definitions of Love. Following the directed edges (i.e., the arrows) allows you to track back how definitions may have been expressed.   
+  
+## Raw Bigram Networks
+    
+The raw bigram networks (similar to the example) of the two datasets are included below. Please note, the network of Personal Definitions contains **685 bigrams**, and the network of Literary Quotes contains **1330 bigrams** - the networks are thus far from legible even if they were printed on a larger plot area. I will address how to deal with such issues in more detail below, however, I first want to consider what happens when minimal adjustments are made to the data:  
+  
+```{R raw bigram pd, echo = FALSE, message = FALSE, warning = FALSE}
+pd_bigrams <- BigramCount(pd_data, "Quote")
+
+pd_qgraph <- qgraph(pd_bigrams, directed = TRUE, layout = "spring", theme = "colorblind")
+```
+    
+*Figure 4.* An unadjusted network of Personal Definition Bigrams (sets of two consecutive words). The total number of bigrams included is 685.  
+   
+   
+```{r raw bigram writers, echo = FALSE}
+writers_bigrams <- BigramCount(writers_data, "Quote")
+
+writers_qgraph <- qgraph(writers_bigrams, directed = TRUE, layout = "spring", theme = "colorblind")
+```
+    
+*Figure 5.* An unadjusted network of Literary Quote Bigrams (sets of two consecutive words). The total number of bigrams included is 1330. 
+
+## What lessons can be learned?
+
+### Removal of stop-words
+  There exist a great number of manuals on Natural Language Processing, one of which is the TidyText book (2017). This book was initially used as a guideline on how to extract meaningful sections of text (i.e., tokens), however I also noticed a problematic step in their bigram procedure; stop-words are removed after bigram extraction. Let me illustrate why this is problematic. Bigrams are extracted from the original sentences, after removal of punctuation and transformation to lower case. At this stage a sentence may look like: "the feeling of deep care for another human being". Extraction of bigrams (i.e., two consecutive words) will result in a list of "the-feeling", "feeling-of", "of-deep", "deep-care", "care-for", "for-another", "another-human", "human-being". It was then advised to search through the list of bigrams and remove any that contained a stop-word (a library was provided of 1149 words). In the case of the example that would leave: "deep-care", "human-being". Although we may intuitively know that we cannot experience deep care without also experiencing a feeling, this example illustrates how removing stop-words after extraction of the bigrams may remove insightful words/concepts. Consequently, I opted not to remove the stop-words at this stage, but rather before extracting bigrams (through use of the `NLP` package). 
+  A second insight was provided by the fact that different packages utilize different stop-word libraries and thus will produce greatly different outcomes. For example, the initially used `tidytext` package included a stop-word library containing 1149 words, in contrast the later used `NLP` package includes a library that contains only 174 English stopwords. One should thus not only consider when to remove stopwords, but also which libraries are utilized as one may in fact remove too many or too little words. For the second set of networks I have opted to remove both the stop wordsfrom the `tidytext` library, as well as those included in the `NLP` library.
+
+
+### Linear relationship N Bigrams & N Descriptions
+  The first thing I noted was that the larger the dataset (the Literary Quotes data contains more entries than the Personal Definitions), the more bigrams seemed to be included in the network. Although some increase in the amount of bigrams should be expected (illustrating differences between statements), I did not expect the increase to be as strong as it currently is:  
+       
+```{R simulation descriptions bigrams, echo = FALSE}
+simulation_pd <- BigramIncreaseNDescriptions(pd_data, "Quote")
+simulation_writers <- BigramIncreaseNDescriptions(writers_data, "Quote")
+
+plot(simulation_writers, col = "blue")
+points(simulation_pd, col = "red")
+legend(125, 400, legend = c("Personal Definitions", "Literary Quotes"), 
+       col = c("red", "blue"), pch = rep(1, 2))
+
+
+```
+  
+*Figure 6.* Increase of Number of unique bigrams with the increase of amount of statements in the dataset. Red circles represent the Personal Definitions, where blue represent the Literary Quotes.  
+
+### Uniqueness
+The increase in number of bigrams with the amount of statements included in the data sample illustrates that there is likely to be relative little overlap between and within statements; a high uniqueness of the data. This assumption is supported by the overview of edge weights (i.e., amount of times a bigram occurs within the dataset):  
+  
+Table 1. *The frequency of unique bigrams in the sample of Personal Definitions. For example, there were 665 bigrams that occured only once in the entire dataset.*  
+  
+``` {r table bigram frequency, echo = FALSE}
+table(pd_bigrams[,3])
+```
+  
+Table 2. *The frequency of unique bigrams in the sample of Literary Quotes. For example, there were 1214 bigrams that occured only once in the entire dataset.*  
+  
+``` {r table bigram frequency 2, echo = FALSE}
+table(writers_bigrams[,3])
+```
+    
+This yields an unsurprising pattern of centrality measures. I have included a sample from the Literary Quotes dataset to illustrate that, in general, the nodes have low centrality. 
+  
+```{r example centrality plot, echo=FALSE, message=FALSE, warning=FALSE}
+sample_qgraph <- qgraph(writers_bigrams[1:15,], directed = TRUE, DoNotPlot = TRUE)
+centralityPlot(sample_qgraph)
+```
+
+*Figure 7.* A subset of data from the Literary Quotes Bigram Network showing low centrality for the different nodes (i.e., words).  
+
+Some nodes, of course, are more central than others, which is already indicated by the high betweenness and in going edges for the node 'love'. I have calculated the centrality measures for the entire networks to determine whether, other than 'love', there are more influential nodes.
+ 
+```{r top 5 centrality, echo = FALSE}
+# qgraph objects created earlier
+pd_centrality <- centrality(pd_qgraph)
+writers_centrality <- centrality(writers_qgraph)
+
+# Display Centraly Top 5 Nodes
+centralTop5 <- function (Centrality) {
+  betweenness <- head(sort(Centrality$Betweenness, decreasing = TRUE), 5)
+  closeness <- head(sort(Centrality$Closeness, decreasing = TRUE), 5)
+  outStrength <- head(sort(Centrality$OutDegree, decreasing = TRUE), 5)
+  
+  return(list("Top5 Betweenness" = betweenness, "Top5 Closeness" = closeness, 
+              "Top5 OutDegree" = outStrength))
+}
+
+```
+
+```{r top5 personal definitions}
+centralTop5(pd_centrality)
+```
+  
+```{r top5 literary quotes}
+centralTop5(writers_centrality)
+```
+  
+These centrality measures show that there are some very influential nodes (e.g., 'love'), however, also that the that number is limited to 1 (steep decline in centrality from node 1 to 2). I would expect that the nodes that are currently the most central, will also be central in the second Network approach. The results also show that tokenization of the nodes has created non-words such as "ll". This is the direct consequence of ineffective tokenization packages, which cause words such as "you'll" to split into "you" and "ll". This particular issue has been resolved in the procedure for network 2 where this type of punctuation "'" is removed before the text is further tokenized.
+
+## Conclusion
+In an attempt to find common ground between definitions of love I started by extracting and plotting bigrams. Bigrams are unique combinations of consecutive words and thus allow for the visualization of directed networks. However, it was demonstrated that the amount of bigrams increases directly with the amount of descriptions included in the analysis (see Figure 6), and that only the node 'love' has a high centrality in the entire network structure. I have learned that 1) a decision is required as to when stop wordsshould be removed, 2) bigrams of large datasets are little revealing, and 3) the order of text processing must be taken into account to ensure valuable verbal information is not lost.  
+
+# Network 2: Co-occurrence of Words in Sentences
+The first network approach demonstrated that extracting and plotting a directed network of bigrams may result in too much noise and consequently does really allow for inferences. The second approach therefore considers larger tokens: entire statements. Edge weights will now be determined by how often a given word (i.e., node) occurs in a statement with another word. In addition to including larger tokens, additional attempts are included to aim and decrease the amount of nodes included in the network. Firstly, I will remove both the `tidytext` and the `NLP` stop-words database from the statements. Secondly, a threshold is set to exclude any words / nodes that only occur a relatively low amount of times (N=8) in one single sentence. Thirdly, the data was converted to a binary format as co-occurrence between two words did not occur more than three times in one sentence. Converting the data to a binary format thus allowed the plotting of an Ising Network with eGlasso estimation (gamma = 0; to allow finding of as many edges as possible, and 'AND' == FALSE)[^9]. 
+
+[^9]: For a detailed discussion of the settings and the implications see Borkulo (2017)
+
+
+```{R NetwerkPlot2, echo = FALSE}
+plot_network_poging2 <- function (dataset, textcol){
+
+# Step 1: Create Corpus out of Dataset
+    # required as input for the tm package manipulations
+    data_corpus <- Corpus(VectorSource(dataset[,textcol]))
+
+  # Step 2: Tidy Corpus
+    data_corpus <- tm_map(data_corpus, removeWords, "’")
+    data_corpus <- tm_map(data_corpus, removeWords, c("the","The"))
+    data_corpus <- tm_map(data_corpus, removeNumbers) 
+    data_corpus <- tm_map(data_corpus, removeWords, stopwords("en")) # N = 174
+    
+    # load stop wordsdata set from `tidytext` package
+      data(stop_words)
+      stopwords<- as.matrix(stop_words) # convert tiblle to matrix
+      stopwords<- as.vector(StopWords[,1])# convert matrix to vector (required as input
+      #.. for removeWords function)
+    data_corpus <- tm_map(data_corpus, removeWords, StopWords)
+    
+  # Step 3: Convert Back to DataFrame for Tokenization Purposes
+    dataset_updated <- data.frame(text = sapply(data_corpus, as.character), 
+                                  stringsAsFactors = FALSE)
+    text_df <- data_frame(line = 1:nrow(dataset_updated), text = dataset_updated$text)
+  
+  # Step 4: Extract Sentences as Token
+   require(tokenizers)
+    sentences <- tokenize_sentences(text_df$text, strip_punctuation = TRUE, 
+                                    lowercase = TRUE) # produces a list
+    sentences <- data.frame(unlist(sentences))
+    rownames(sentences) <- 1:nrow(sentences)
+    #sentences <- as.character(sentences)
+  
+  # Step 5: Create TermDocumentMatrix = Word Coocurrance Within Sentences
+    data_corpus <- Corpus(VectorSource(sentences[,])) # corpus required as input for tdm
+    tdm <- TermDocumentMatrix(data_corpus)
+    tdm <- as.matrix(tdm)
+    # make binary for IsingFit
+    tdm[tdm > 1] <- 1 
+    # transpose for IsingFit input
+    tdm <- t(tdm)
+    
+    return(tdm)
+    
+}   
+```
+
+```{r NetworkPersonalDefinitions, echo=FALSE, message=FALSE, warning=FALSE}
+# calculate input for netwerk
+  input_pd <- plot_network_poging2(pd_data, "Quote")
+
+# remove words/columns/nodes with low amount of occurances
+    threshold <- colSums(input_pd)
+    output_pd <- input_pd[,-which(threshold < 3)] 
+        # specified in warning of IsingFit model no variables with less than 8 observations
+  
+
+# fit and plot network
+  fit_pd <- IsingFit(output_pd, family = "binomial", gamma = 0, plot = TRUE, AND = FALSE,
+                  progressbar = FALSE, theme = "colorblind")
+ 
+```
+  
+*Figure 8.* A Binomial Ising Network of the co-occurence of words in the Personal Definitions of Love.  
+  
+
+```{R NetworkLiteraryQuote, echo = FALSE, message = FALSE, warning = FALSE}
+# calculate input for network
+  input_writers <- plot_network_poging2(writers_data, "Quote")
+
+# remove words/columns/nodes with low amount of occurances
+    threshold <- colSums(input_writers)
+    output_writers <- input_writers[,-which(threshold < 3)] 
+        # specified in warning of IsingFit model no variables with less than 8 observations
+
+# fit and plot network
+  fit_writers <- IsingFit(output_writers, family = "binomial", gamma = 0, plot = TRUE, AND = FALSE,
+                  progressbar = FALSE, theme = "colorblind")
+```
+  
+*Figure 9.* A Binomial Ising Network of the co-occurence of words in the Literary Quotes of Love.  
+
+## What lessons can be learned?
+
+### Uniqueness of Definitions
+We saw earlier that the uniqueness of definitions is very high. This could be seen in the direct increase of bigrams with the amount of included definitions, as well as in the low centrality indices. It is therefore perhaps not unsurprising to see that the frequency of co-occuring words, even within an entire sentence, is still very low. Setting a threshold for a single word (i.e., node) to occur in at least three different sentences (thereby increasing the chances of co-occurance with other words), drastically reduces the network from 337 to 25 nodes in the Personal Definitions and from 661 to 50 in the Literary Quotes. Even then, the networks clearly show a lack of overlap as a relatively large number of nodes remain unconnected.
+
+### Synonyms
+As can been seen from the networks, a lot of words are very similar to one another. For example, in the Literary Quotes network words such as 'love', 'loved', 'loving' etc. are all included. In fact, these nodes are negatively correlated. Indicating that use of the one synonym prevents authors from using the other synonym. Therefore, if one wants to capture any form of text input as a network structure, one should take into account that synonyms may bias the data. As of yet I have been unable to find a Natural Language Processing package that deals with synonyms in an adequate sense. Grouping all synonyms together might, however, reduce the variability between definitions.  
+
+### Combination of Data
+Although I previously argued for a separation of the data, I did want to explore what would happen if the two datasets were combined. The result is plotted below:
+
+``` {r, echo = FALSE, warning = FALSE, message = FALSE}
+# calculate input for network
+  input_all <- plot_network_poging2(all_data, "Quote")
+
+# remove words/columns/nodes with low amount of occurances
+    threshold <- colSums(input_all)
+    output_all <- input_writers[,-which(threshold < 3)] 
+        # specified in warning of IsingFit model no variables with less than 8 observations
+
+# fit and plot network
+  fit_writers <- IsingFit(output_all, family = "binomial", gamma = 0, plot = TRUE, AND = FALSE,
+                  progressbar = FALSE, theme = "colorblind")
+```
+  
+*Figure 10.* A combined Ising Network of data from the Personal Definitions and Literary Quotes  
+
+The combination of data has an interesting and unexpected effect: different edges arise than occurred in the separate networks. This is an interesting effect because it may indicate that there might be more overlap between the two datasets than I expected. After all, only an increase in co-occurring words could have created more edges and nodes to appear. 
+
+## Conclusion
+In an attempt to find common ground between definitions of love I explored the co-occurrence of words in sentences. As becomes evident from the Figures (8,9,10); there is little common ground to be found. Interestingly, even with a larger tokenization, the amount of information visualized by the network is rather little. Or one might argue that is demonstrates exactly the opposite; the lack of visible edges indicates that there is large variation in the definitions of love. 
+
+# General Conclusion
+Two network analyses of the definitions of love have revealed that there is little overlap between lay-persons and writer's definitions of love. Accurate visualization of a verbal structure is further complicated by the lack of clear procedures such as which stop wordsshould be removed, and during what time of the process. Furthermore, analyses of any form of text would greatly benefit from the ability to automatically remove synonyms from the text. 
+
+\newpage
+
+# References
+
+1. Borkulo, C.V. (2017). A Tutorial on R Package IsingFit. https://cvborkulo.files.wordpress.com/2017/06/tutisingfit.pdf. Published on: 01/07/2017, Accessed on: 12/12/2017
+
+2. Cambride Dictionary (2017). Meaning of “love” in the English Dictionary. https://dictionary.cambridge.org/dictionary/english/love. Published on: unknown. Accessed on: 05/12/2017 
+
+3. Merriam Webster Dictionary (2017). Definition of love. https://www.merriam-webster.com/dictionary/love. Published on: 11/12/2017, Accessed on 12/12/2017
+
+4. Seltzer, L.F. (2011). Love Quotes: The Wisest, Wittiest, and Most Cynical. Published on: 12/02/2011, Accessed on 05/05/2017
+
+5. Silge, J., Robinson, D. (2017). Text Mining With R - A Tidy Approach. http://tidytextmining.com. Published on: 07/05/2017, Accessed on: 01/12/2017
+
+6. QuoteDB (2017). Love. https://www.quotedb.com/categories/love. Accessed on: 05/05/2017
+
+# Appendix
+ 
+An Online Appendix is available at https://github.com/SHogenboom/NetworkAnalysisDefitionOfLove. Items included in the appendix are:
+
++ Personal Definition
++ Quote DB - database of Literary Quotes
++ Psychology Today - database of Literary Quotes
++ FinalAssignment.Rmd - RMarkdown File including all code required to run the analyses
++ FinalAssignment.pdf - Final Assingment Report
+
