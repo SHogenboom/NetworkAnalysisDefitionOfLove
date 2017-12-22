@@ -4,13 +4,19 @@ subtitle: "The Issues Encountered and how I Solved Them"
 author: 
 - "Sally A.M. Hogenboom"
 - "11377909"
-- "word count: 2110 exlc. references & figurecaptions"
+- "word count: 2762 exlc. references"
 date: "12-12-2017"
 output:
   pdf_document:
     toc: TRUE
-    toc_depth: 3 
+    toc_depth: 3
+urlcolor: blue 
 ---
+
+\newpage
+
+**Author note: ** *I acknowledge the fact that the networks are not very legible, I have thus uploaded each plot seperately in an Online Appendix as well. I was not sure how to make the plots legible in the current format since they contain such a large amount of variables, and thus nodes. I hope, however, that the trend of the findings is clear and that you will consider looking at them online if you wish to go into the details of my findings.* 
+
 \newpage
 
 ```{r setup, include=FALSE}
@@ -26,7 +32,7 @@ library(wordcloud)
 library(stringr)
 library(IsingFit)
 
-# setwd("~/Documents/Universiteit/Master/13-Network_Analysis")
+# setwd()
 oldpar <- par()
 ```
 
@@ -239,7 +245,7 @@ sd(pd_words$total)
 A different source of definitions of love comes from the literature. Writers have been known to describe love in unique ways. I have thus searched the internet for "Quotes of Love". Such searches result in a long list of website quoting famous authors. A selection was made and resulted in the following two sets of data: QuoteDB (N = 100; 2017), 
 and a list of wise, witty, and cynical quotes by Seltzer (N = 96; 2011).  
 
-```{r pd_descriptives2, message=FALSE, warning=FALSE, include=FALSE}
+```{r writers_descriptives, message=FALSE, warning=FALSE, include=FALSE}
 writers_words <- SentenceLengths(writers_data)
 
 min(writers_words$total)
@@ -270,7 +276,7 @@ hist(writers_words$total, xlab = "N Words", ylab = "Frequency of Descriptions",
     
 *Figure 1.* An overview of the total amount of words in the descriptions after removal of stop-words.
 
-```{R, echo=FALSE, message=FALSE, warning=FALSE}
+```{R WordCloud Plots, echo=FALSE, message=FALSE, warning=FALSE}
 # Create 1 row x 2 plots
   par(mfrow = c(1,2))
 
@@ -302,7 +308,7 @@ wordcloud(words = writers_word_frequencies$word, freq = writers_word_frequencies
 One of the ways in which the data may be visualized is by plotting bigrams. Bigrams are combinations of two words that directly follow each other. For example consider the statement: "Love is caring deeply for another". Without stop-words (these are removed at the initial processing stage) that sentence looks like this: "love caring deeply". The example sentence contains two bigrams: "love-caring" and "caring-deeply". Plotting these in a directed acylic graphical (DAG) network allows you to follow the nodes, and thereby actually read the definitions. Consider another example statement: "love is feeling deeply emotional.". Combined, these two statements in a DAG would look like this:  
    
   
-```{r, echo = FALSE}
+```{r ExampleBigramNetwork, echo = FALSE}
 # Create Edgelist Example Matrix
 example <- matrix(c(
   "love", "caring", 1,
@@ -344,7 +350,7 @@ writers_qgraph <- qgraph(writers_bigrams, directed = TRUE, layout = "spring", th
 
 ### Removal of stop-words
   There exist a great number of manuals on Natural Language Processing, one of which is the TidyText book (2017). This book was initially used as a guideline on how to extract meaningful sections of text (i.e., tokens), however I also noticed a problematic step in their bigram procedure; stop-words are removed after bigram extraction. Let me illustrate why this is problematic. Bigrams are extracted from the original sentences, after removal of punctuation and transformation to lower case. At this stage a sentence may look like: "the feeling of deep care for another human being". Extraction of bigrams (i.e., two consecutive words) will result in a list of "the-feeling", "feeling-of", "of-deep", "deep-care", "care-for", "for-another", "another-human", "human-being". It was then advised to search through the list of bigrams and remove any that contained a stop-word (a library was provided of 1149 words). In the case of the example that would leave: "deep-care", "human-being". Although we may intuitively know that we cannot experience deep care without also experiencing a feeling, this example illustrates how removing stop-words after extraction of the bigrams may remove insightful words/concepts. Consequently, I opted not to remove the stop-words at this stage, but rather before extracting bigrams (through use of the `NLP` package). 
-  A second insight was provided by the fact that different packages utilize different stop-word libraries and thus will produce greatly different outcomes. For example, the initially used `tidytext` package included a stop-word library containing 1149 words, in contrast the later used `NLP` package includes a library that contains only 174 English stopwords. One should thus not only consider when to remove stopwords, but also which libraries are utilized as one may in fact remove too many or too little words. For the second set of networks I have opted to remove both the stop wordsfrom the `tidytext` library, as well as those included in the `NLP` library.
+  A second insight was provided by the fact that different packages utilize different stop-word libraries and thus will produce greatly different outcomes. For example, the initially used `tidytext` package included a stop-word library containing 1149 words, in contrast the later used `NLP` package includes a library that contains only 174 English stop words. One should thus not only consider when to remove stop words, but also which libraries are utilized as one may in fact remove too many or too little words. For the second set of networks I have opted to remove both the stop wordsfrom the `tidytext` library, as well as those included in the `NLP` library.
 
 
 ### Linear relationship N Bigrams & N Descriptions
@@ -390,7 +396,7 @@ centralityPlot(sample_qgraph)
 
 Some nodes, of course, are more central than others, which is already indicated by the high betweenness and in going edges for the node 'love'. I have calculated the centrality measures for the entire networks to determine whether, other than 'love', there are more influential nodes.
  
-```{r top 5 centrality, echo = FALSE}
+```{r top 5 centrality function, echo = FALSE}
 # qgraph objects created earlier
 pd_centrality <- centrality(pd_qgraph)
 writers_centrality <- centrality(writers_qgraph)
@@ -418,16 +424,15 @@ centralTop5(writers_centrality)
 These centrality measures show that there are some very influential nodes (e.g., 'love'), however, also that the that number is limited to 1 (steep decline in centrality from node 1 to 2). I would expect that the nodes that are currently the most central, will also be central in the second Network approach. The results also show that tokenization of the nodes has created non-words such as "ll". This is the direct consequence of ineffective tokenization packages, which cause words such as "you'll" to split into "you" and "ll". This particular issue has been resolved in the procedure for network 2 where this type of punctuation "'" is removed before the text is further tokenized.
 
 ## Conclusion
+
 In an attempt to find common ground between definitions of love I started by extracting and plotting bigrams. Bigrams are unique combinations of consecutive words and thus allow for the visualization of directed networks. However, it was demonstrated that the amount of bigrams increases directly with the amount of descriptions included in the analysis (see Figure 6), and that only the node 'love' has a high centrality in the entire network structure. I have learned that 1) a decision is required as to when stop wordsshould be removed, 2) bigrams of large datasets are little revealing, and 3) the order of text processing must be taken into account to ensure valuable verbal information is not lost.  
 
 # Network 2: Co-occurrence of Words in Sentences
-The first network approach demonstrated that extracting and plotting a directed network of bigrams may result in too much noise and consequently does really allow for inferences. The second approach therefore considers larger tokens: entire statements. Edge weights will now be determined by how often a given word (i.e., node) occurs in a statement with another word. In addition to including larger tokens, additional attempts are included to aim and decrease the amount of nodes included in the network. Firstly, I will remove both the `tidytext` and the `NLP` stop-words database from the statements. Secondly, a threshold is set to exclude any words / nodes that only occur a relatively low amount of times (N=8) in one single sentence. Thirdly, the data was converted to a binary format as co-occurrence between two words did not occur more than three times in one sentence. Converting the data to a binary format thus allowed the plotting of an Ising Network with eGlasso estimation (gamma = 0; to allow finding of as many edges as possible, and 'AND' == FALSE)[^9]. 
 
-[^9]: For a detailed discussion of the settings and the implications see Borkulo (2017)
+The first network approach demonstrated that extracting and plotting a directed network of bigrams may result in too much noise and consequently does really allow for inferences. The second approach therefore considers larger tokens: entire statements. Edge weights will now be determined by how often a given word (i.e., node) occurs in a statement with another word. In addition to including larger tokens, additional attempts are included to aim and decrease the amount of nodes included in the network. Firstly, I will remove both the `tidytext` and the `NLP` stop-words database from the statements.  
 
-
-```{R NetwerkPlot2, echo = FALSE}
-plot_network_poging2 <- function (dataset, textcol){
+```{R NetwerkPlot2 Function, echo = FALSE, warnings = FALSE}
+plot_network_poging2 <- function (dataset, textcol, binary){
 
 # Step 1: Create Corpus out of Dataset
     # required as input for the tm package manipulations
@@ -442,9 +447,9 @@ plot_network_poging2 <- function (dataset, textcol){
     # load stop wordsdata set from `tidytext` package
       data(stop_words)
       stopwords<- as.matrix(stop_words) # convert tiblle to matrix
-      stopwords<- as.vector(StopWords[,1])# convert matrix to vector (required as input
+      stopwords<- as.vector(stopwords[,1])# convert matrix to vector (required as input
       #.. for removeWords function)
-    data_corpus <- tm_map(data_corpus, removeWords, StopWords)
+    data_corpus <- tm_map(data_corpus, removeWords, stopwords)
     
   # Step 3: Convert Back to DataFrame for Tokenization Purposes
     dataset_updated <- data.frame(text = sapply(data_corpus, as.character), 
@@ -462,20 +467,136 @@ plot_network_poging2 <- function (dataset, textcol){
   # Step 5: Create TermDocumentMatrix = Word Coocurrance Within Sentences
     data_corpus <- Corpus(VectorSource(sentences[,])) # corpus required as input for tdm
     tdm <- TermDocumentMatrix(data_corpus)
-    tdm <- as.matrix(tdm)
-    # make binary for IsingFit
-    tdm[tdm > 1] <- 1 
-    # transpose for IsingFit input
-    tdm <- t(tdm)
     
-    return(tdm)
+    # convert to binary dataframe for IsingFit Network
+    if (binary == "yes") {
+        tdm <- as.matrix(tdm)
+      
+       # make binary for IsingFit
+          tdm[tdm > 1] <- 1 
+        # transpose for IsingFit input
+          tdm <- t(tdm)
+      
+         return(tdm)
+          
+    # computer co-occurrence correlations     
+    } else if (binary == "no") {
+      # Step 6: Create Co-Occurrence Matrix
+        tdm <- as.matrix(tdm)
+        co_mat <-  tdm %*% t(tdm) # multiply to get co-occurrence matrix
+        diag(co_mat) <- -1 # remove associations with self
+        
+        return(co_mat)
+        
+    } # END IF
     
 }   
 ```
 
-```{r NetworkPersonalDefinitions, echo=FALSE, message=FALSE, warning=FALSE}
+## Personal Definitions
+
+### Complete Network
+
+```{R Complete Cooccurrence PD, echo=FALSE, message=FALSE, warning=FALSE}
+# calculate data input for network
+  input_pd_correlation <- plot_network_poging2(pd_data, "Quote", binary = "no")
+
+# calculate correlations
+  input_pd_correlation <- cor(input_pd_correlation, method = "pearson",
+                              use = "pairwise.complete.obs")
+  
+  nNames <- rownames(input_pd_correlation)
+
+  pd_cor <- qgraph(input_pd_correlation, layout = "spring", graph = "assosciation")
+
+```
+
+*Figure 8.* Co-occurrence network of words used to define love in the sample of Personal Definitions. Only significantly correlated edges (p < .05; Pearson correlations) are visible. 
+
+### Non-Sparse Network
+
+```{R NonSparese PD, echo = FALSE}
+
+non_sparse_co_pd <- qgraph(input_pd_correlation, layout = "spring", 
+                           threshold = .8)
+
+```
+
+*Figure 9.* Co-occurrence network of words used to define love in the sample of Personal Definitions. Threshold is set to 0.8 to create a denser network. Please see the Online Appendix for a pdf version of the plot, allowing for close-up inspection of the clusters.
+
+#### Centrality Measures
+
+An overview of the top 20 most central as included in a dense network of personal definitions of love. These are the items represented in the clusters.
+
+```{R Centrality NonSparese PD, echo = FALSE}
+# Display Centraly Top 20 Nodes
+centralTop20<- function (Centrality) {
+  outStrength <- head(sort(Centrality$OutDegree, decreasing = TRUE), 20)
+  
+  return(list( "Top 20 OutDegree" = outStrength))
+}
+
+centralTop20(centrality(non_sparse_co_pd))
+
+```
+
+
+## Literary Quotes
+
+### Complete Network
+
+```{R Complete Cooccurrence Writers, echo = FALSE, warnings = FALSE}
+# calculate data input for network
+  input_writers_correlation <- plot_network_poging2(writers_data, "Quote", binary = "no")
+  
+# calculate correlations
+  input_writers_correlation <- cor(input_writers_correlation, method = "pearson")
+
+  qgraph(input_writers_correlation, layout = "spring", graph = "assosciation")
+
+```
+
+*Figure 10.* Co-occurrence network of words used to define love in the sample of Literary Quotes. Only significantly correlated edges (p < .05) are visible. 
+
+### Non-Sparse Network
+
+```{R NonSparese Writers, echo = FALSE}
+
+non_sparse_co_writers <- qgraph(input_writers_correlation, layout = "spring", 
+                                threshold = .8, minimum = .8)
+
+```
+
+*Figure 11.* Co-occurrence network of words used to define love in the sample of Literary Quotes. Threshold is set to 0.8 to create a denser and more legible network. 
+
+
+#### Centrality Measures
+
+An overview of the top 20 most central as included in a dense network of personal definitions of love. These are the items represented in the clusters.
+
+```{R CentralityPlot NonSparese Writers, echo = FALSE}
+
+centralTop20(centrality(non_sparse_co_writers))
+
+```
+
+
+## What lessons can be learned?
+
+The networks show that - when adopting a sentence tokenization - there is some clustering of words. However, there is also evidence that some stop-words have not been correctly removed (e.g., "but"). It also becomes evident that there are relatively small clusters of words, and that correlations between other all other words do not reach statistical significance.
+
+
+# Network 3: IsingFit - Conditional Dependence Networks
+
+I built on the findings from the previous network to estimate an Ising Network; estimating how strong associations between words are when accounted for all other correlations. Two attempts were made to create a dense network. Firstly, a threshold was set to exclude any words / nodes that only occur a relatively low amount of times (Frequency > 3). This reduces chances of estimating a non-positive partial correlation matrix. Secondly, the data was converted to a binary format as co-occurrence between two words did not happen more than three times in one sentence. Converting the data to a binary format thus allowed the plotting of an Ising Network with eGlasso estimation (gamma = 0; to allow finding of as many edges as possible, and 'AND' == FALSE)[^9]. 
+
+[^9]: For a detailed discussion of the settings and the implications see Borkulo (2017)
+
+## Personal Definitions
+
+```{r IsingNetworkPersonalDefinitions, echo=FALSE, message=FALSE, warning=FALSE}
 # calculate input for netwerk
-  input_pd <- plot_network_poging2(pd_data, "Quote")
+  input_pd <- plot_network_poging2(pd_data, "Quote", binary = "yes")
 
 # remove words/columns/nodes with low amount of occurances
     threshold <- colSums(input_pd)
@@ -489,12 +610,13 @@ plot_network_poging2 <- function (dataset, textcol){
  
 ```
   
-*Figure 8.* A Binomial Ising Network of the co-occurence of words in the Personal Definitions of Love.  
+*Figure 12.* A Binomial Ising Network of the co-occurence of words in the Personal Definitions of Love.  
   
+## Literary Quotes
 
-```{R NetworkLiteraryQuote, echo = FALSE, message = FALSE, warning = FALSE}
+```{R IsingNetworkLiteraryQuote, echo = FALSE, message = FALSE, warning = FALSE}
 # calculate input for network
-  input_writers <- plot_network_poging2(writers_data, "Quote")
+  input_writers <- plot_network_poging2(writers_data, "Quote", binary = "yes")
 
 # remove words/columns/nodes with low amount of occurances
     threshold <- colSums(input_writers)
@@ -506,7 +628,8 @@ plot_network_poging2 <- function (dataset, textcol){
                   progressbar = FALSE, theme = "colorblind")
 ```
   
-*Figure 9.* A Binomial Ising Network of the co-occurence of words in the Literary Quotes of Love.  
+*Figure 13.* A Binomial Ising Network of the co-occurence of words in the Literary Quotes of Love.  
+
 
 ## What lessons can be learned?
 
@@ -516,12 +639,13 @@ We saw earlier that the uniqueness of definitions is very high. This could be se
 ### Synonyms
 As can been seen from the networks, a lot of words are very similar to one another. For example, in the Literary Quotes network words such as 'love', 'loved', 'loving' etc. are all included. In fact, these nodes are negatively correlated. Indicating that use of the one synonym prevents authors from using the other synonym. Therefore, if one wants to capture any form of text input as a network structure, one should take into account that synonyms may bias the data. As of yet I have been unable to find a Natural Language Processing package that deals with synonyms in an adequate sense. Grouping all synonyms together might, however, reduce the variability between definitions.  
 
-### Combination of Data
+
+## Combination of Data
 Although I previously argued for a separation of the data, I did want to explore what would happen if the two datasets were combined. The result is plotted below:
 
-``` {r, echo = FALSE, warning = FALSE, message = FALSE}
+``` {r IsingCombinedNetwork, echo = FALSE, warning = FALSE, message = FALSE}
 # calculate input for network
-  input_all <- plot_network_poging2(all_data, "Quote")
+  input_all <- plot_network_poging2(all_data, "Quote", binary = "yes")
 
 # remove words/columns/nodes with low amount of occurances
     threshold <- colSums(input_all)
@@ -533,15 +657,19 @@ Although I previously argued for a separation of the data, I did want to explore
                   progressbar = FALSE, theme = "colorblind")
 ```
   
-*Figure 10.* A combined Ising Network of data from the Personal Definitions and Literary Quotes  
+*Figure 14.* A combined Ising Network of data from the Personal Definitions and Literary Quotes  
 
 The combination of data has an interesting and unexpected effect: different edges arise than occurred in the separate networks. This is an interesting effect because it may indicate that there might be more overlap between the two datasets than I expected. After all, only an increase in co-occurring words could have created more edges and nodes to appear. 
 
-## Conclusion
-In an attempt to find common ground between definitions of love I explored the co-occurrence of words in sentences. As becomes evident from the Figures (8,9,10); there is little common ground to be found. Interestingly, even with a larger tokenization, the amount of information visualized by the network is rather little. Or one might argue that is demonstrates exactly the opposite; the lack of visible edges indicates that there is large variation in the definitions of love. 
 
 # General Conclusion
-Two network analyses of the definitions of love have revealed that there is little overlap between lay-persons and writer's definitions of love. Accurate visualization of a verbal structure is further complicated by the lack of clear procedures such as which stop wordsshould be removed, and during what time of the process. Furthermore, analyses of any form of text would greatly benefit from the ability to automatically remove synonyms from the text. 
+Three network analyses of the definitions of love for sample of personal definitions and literary quotes have been excecuted. The relative sparsity of the co-occurrence and Ising networks show that there is little overlap between definitions. This has also become evident from centrality indices. One can thus conclude that there is large variation in the definitions that are provided of love.  
+  
+Accurate visuzalization of verbal structures (e.g., definitions) is further complicated by the lack of clear procedures. For example, clear guidelines should be constructed as to which stop words are removed and at which time during data cleaning. Without such guidelines will it be difficult to converge on findings of verbal data, as different procedures may result in different outcomes. In addition, removal of synonyms is currently only possible through a dependency called `WordNet`[^10] which is difficult to utilize for people who are less experienced with installing databases and dependencies through the console of their computer. Future researchers would thus benefit from an approach to collapse over synonyms in easier applied procedures. Thirdly, future researchers may wish to explore whether narrower guidelines regarding the datacollection of defenitions (e.g., "Please report what you feel like when thinking about your boy/girlfriend.") could result in higher convergence rates, without loosing the ability to detect common ground in a broad sample. Finally, to the best of my knowledge does the `qgraph` package not yet have a built in function that allows for zooming in on clusters, for large data visualizations such as the one above it would be useful to have such a functionality.   
+
+
+[^10]: WordNet: https://wordnet.princeton.edu
+
 
 \newpage
 
@@ -563,9 +691,10 @@ Two network analyses of the definitions of love have revealed that there is litt
  
 An Online Appendix is available at https://github.com/SHogenboom/NetworkAnalysisDefitionOfLove. Items included in the appendix are:
 
-+ Personal Definition
++ Personal Definitions database
 + Quote DB - database of Literary Quotes
 + Psychology Today - database of Literary Quotes
 + FinalAssignment.Rmd - RMarkdown File including all code required to run the analyses
-+ FinalAssignment.pdf - Final Assingment Report
++ FinalAssignment.pdf - Final Assingment Report (including all plots - allowing for inspection of clusters)
++ Folder containing all networks / plots as pdf's
 
